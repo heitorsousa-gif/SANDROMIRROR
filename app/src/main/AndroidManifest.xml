@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.usb.accessory" android:required="false" />
+
+    <!-- INTERNET só é usada pelo botão "Atualizar app", para consultar o GitHub. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Para saber se Maps, Waze, YouTube e Spotify estão instalados (Android 11+). -->
+    <queries>
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.waze" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.google.android.googlequicksearchbox" />
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="SandroMirror"
+        android:icon="@drawable/ic_sandro"
+        android:theme="@android:style/Theme.DeviceDefault"
+        android:allowBackup="false">
+
+        <!-- Configurações e log (aberto pela engrenagem do painel). -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:label="SandroMirror: ajustes"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- Painel do carro: deitado, botões grandes, aparece por cima da tela de bloqueio. -->
+        <activity
+            android:name=".DashActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- A central chama o app pelo cabo: abre direto no painel. -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
+                android:resource="@xml/accessory_filter" />
+        </activity>
+
+        <service
+            android:name=".Overlay"
+            android:exported="false" />
+
+        <service
+            android:name=".MirrorService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+    </application>
+</manifest>

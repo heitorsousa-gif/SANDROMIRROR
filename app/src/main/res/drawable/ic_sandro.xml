@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícone do SandroMirror: um hatch visto de lado com uma telinha de multimídia acima. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- fundo -->
+    <path android:fillColor="#1565C0" android:pathData="M54,4 A50,50 0 1,1 53.99,4 Z" />
+    <!-- telinha da multimídia -->
+    <path android:fillColor="#0D1B2A" android:pathData="M30,18 h48 a4,4 0 0 1 4,4 v20 a4,4 0 0 1 -4,4 h-48 a4,4 0 0 1 -4,-4 v-20 a4,4 0 0 1 4,-4 z" />
+    <path android:fillColor="#4FC3F7" android:pathData="M33,22 h42 v19 h-42 z" />
+    <!-- seta de navegação na telinha -->
+    <path android:fillColor="#FFFFFF" android:pathData="M54,25 l7,13 l-7,-3 l-7,3 z" />
+    <!-- carro: carroceria -->
+    <path android:fillColor="#ECEFF1"
+        android:pathData="M16,76 L18,66 Q20,62 26,61 L36,60 L44,52 Q47,50 52,50 L70,50 Q75,50 78,54 L84,61 Q92,62 93,67 L94,76 Q94,79 91,79 L19,79 Q16,79 16,76 Z" />
+    <!-- vidros -->
+    <path android:fillColor="#263238" android:pathData="M39,60 L46,53 Q48,52 52,52 L58,52 L58,60 Z" />
+    <path android:fillColor="#263238" android:pathData="M61,52 L70,52 Q74,52 76,55 L80,60 L61,60 Z" />
+    <!-- rodas -->
+    <path android:fillColor="#212121" android:pathData="M32,79 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+    <path android:fillColor="#212121" android:pathData="M78,79 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" />
+    <path android:fillColor="#9E9E9E" android:pathData="M32,79 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <path android:fillColor="#9E9E9E" android:pathData="M78,79 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <!-- farol -->
+    <path android:fillColor="#FFD54F" android:pathData="M88,64 h4 v4 h-4 z" />
+</vector>

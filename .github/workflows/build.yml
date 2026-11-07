@@ -1,0 +1,45 @@
+name: SandroMirror APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Número da versão
+        run: echo "VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
+      - name: Compilar APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Renomear APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk SandroMirror.apk
+
+      - name: Publicar no Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ env.VERSION_CODE }}
+          name: SandroMirror build ${{ env.VERSION_CODE }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: SandroMirror.apk
+          body: |
+            Baixe o SandroMirror.apk no celular e instale, ou use o botão Atualizar app dentro do próprio app.
+            Commit: ${{ github.sha }}
