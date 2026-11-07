@@ -20,7 +20,10 @@ Se uma versão nova der problema, a versão estável 0.4 está em [`backup/`](ba
 
 - Painel com botões grandes: Mapa, Falar destino (voz), Waze, Spotify, YouTube e Assistente.
 - Mantém a tela acesa enquanto espelha.
-- **Modo direção**: relógio, música tocando com botões grandes e próxima instrução do Maps, para mexer só pela tela da central. Precisa liberar "Acesso a notificações" uma vez.
+- **Modo direção** no visual Windows 95 cyberpunk: suas fotos passando como papel de parede (em pé e deitadas, sem cortar), com pausar e fixar; player da música tocando com equalizador; próxima instrução do Maps. Precisa liberar "Acesso a notificações" uma vez.
+- **Modo central / modo celular**: deitado para a central, ou em pé para o copiloto (é no modo celular que se escolhem as fotos e o tempo de troca).
+- Economia de bateria: no modo central a tela do celular fica no brilho mínimo enquanto espelha.
+- Fontes VT323 e Orbitron (licença SIL OFL, em `app/src/main/assets/fonts`).
 - Toque na tela da central controla o celular.
 - Sem permissão de telefone e sem "desligamento remoto" (o Hi-Link tem os dois).
 

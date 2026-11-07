@@ -274,7 +274,7 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
         hint.setPadding(0, pad, 0, pad);
         root.addView(hint, matchWrap());
 
-        Button mirror = button("▶  ESPELHAR", v -> {
+        Button mirror = button("ESPELHAR", v -> {
             if (!Link.isConnected()) connect();
             else askCapture();
         });
@@ -283,7 +283,7 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
 
         LinearLayout row1 = row();
         row1.addView(button("Parar", v -> stopMirror()), weight());
-        row1.addView(button("⟳ Atualizar app", v -> Updater.check(this)), weight());
+        row1.addView(button("Atualizar app", v -> Updater.check(this)), weight());
         root.addView(row1, matchWrap());
 
         LinearLayout row2 = row();

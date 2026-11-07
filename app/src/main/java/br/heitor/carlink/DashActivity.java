@@ -16,6 +16,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.content.pm.ResolveInfo;
+import android.content.res.Configuration;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.widget.ImageView;
@@ -77,16 +78,7 @@ public class DashActivity extends Activity implements Link.Listener {
         }
     };
 
-    private TextView clock;
     private TextView status;
-    private final Handler ui = new Handler(Looper.getMainLooper());
-    private final Runnable tick = new Runnable() {
-        @Override
-        public void run() {
-            clock.setText(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(new Date()));
-            ui.postDelayed(this, 10_000);
-        }
-    };
 
     static void open(Context c) {
         c.startActivity(new Intent(c, DashActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -97,6 +89,7 @@ public class DashActivity extends Activity implements Link.Listener {
         super.onCreate(savedInstanceState);
         // Mantém a tela acesa enquanto o painel está aberto (o espelhamento precisa da tela ligada).
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        Prefs.applyOrientation(this);
         setContentView(buildUi());
         AppLog.init(this);
         usb = (UsbManager) getSystemService(Context.USB_SERVICE);
@@ -223,7 +216,7 @@ public class DashActivity extends Activity implements Link.Listener {
         }
     }
 
-    /** Uma vez por abertura: oferece liberar a sobreposição (botão 🏠 e apps deitados). */
+    /** Uma vez por abertura: oferece liberar a sobreposição (botão azul e apps deitados). */
     private void offerOverlayPermission() {
         if (askedOverlay || Settings.canDrawOverlays(this)) {
             offerBatteryExemption();
@@ -232,7 +225,7 @@ public class DashActivity extends Activity implements Link.Listener {
         askedOverlay = true;
         new AlertDialog.Builder(this)
                 .setTitle("Botão de voltar ao painel")
-                .setMessage("Libere \"Sobrepor a outros apps\" para ter o botão 🏠 flutuante e deixar o Mapa e o YouTube deitados na central.")
+                .setMessage("Libere \"Sobrepor a outros apps\" para ter o botão azul flutuante e deixar o Mapa e o YouTube deitados na central.")
                 .setPositiveButton("Liberar", (d, w) -> startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:" + getPackageName()))))
                 .setNegativeButton("Agora não", null)
@@ -244,13 +237,11 @@ public class DashActivity extends Activity implements Link.Listener {
         super.onResume();
         if (Settings.canDrawOverlays(this) && MirrorService.running) Overlay.start(this);
         Link.setListener(this);
-        ui.post(tick);
         updateStatus();
     }
 
     @Override
     protected void onPause() {
-        ui.removeCallbacks(tick);
         super.onPause();
     }
 
@@ -268,17 +259,19 @@ public class DashActivity extends Activity implements Link.Listener {
     }
 
     private void updateStatus() {
+        if (status == null) return;
+        Prefs.applyBrightness(this);
         switch (Link.state()) {
             case ESPELHANDO:
-                status.setText("● Na central");
+                status.setText("NA CENTRAL");
                 status.setTextColor(Color.rgb(102, 187, 106));
                 break;
             case DESCONECTADO:
-                status.setText("○ Sem cabo");
+                status.setText("SEM CABO");
                 status.setTextColor(Color.rgb(239, 83, 80));
                 break;
             default:
-                status.setText(MirrorService.running ? "● Conectando..." : "● Toque para espelhar");
+                status.setText(MirrorService.running ? "CONECTANDO..." : "TOQUE PARA ESPELHAR");
                 status.setTextColor(Color.rgb(255, 202, 40));
         }
     }
@@ -370,58 +363,97 @@ public class DashActivity extends Activity implements Link.Listener {
 
     private View buildUi() {
         int gap = dp(8);
+        boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(13, 17, 23));
         root.setPadding(gap, gap, gap, gap);
 
+        // Barra de cima: modo direção, status da conexão, troca de modo e ajustes.
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        clock = text(34, Color.WHITE);
-        top.addView(clock);
-        // Botão do modo direção: grande o bastante para acertar na tela da central.
-        TextView drive = text(20, Color.WHITE);
-        drive.setText("🚘 Modo direção");
-        drive.setTypeface(Typeface.DEFAULT_BOLD);
-        drive.setGravity(Gravity.CENTER);
-        int dp10 = dp(10);
-        drive.setPadding(dp10 * 2, dp10, dp10 * 2, dp10);
-        GradientDrawable driveBg = new GradientDrawable();
-        driveBg.setColor(Color.rgb(0, 121, 107));
-        driveBg.setCornerRadius(dp(24));
-        drive.setBackground(driveBg);
-        drive.setOnClickListener(v -> DriveActivity.open(this));
-        LinearLayout.LayoutParams dp2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        dp2.setMargins(dp(16), 0, 0, 0);
-        top.addView(drive, dp2);
+        top.addView(pill("MODO DIREÇÃO", Color.rgb(0, 121, 107), v -> DriveActivity.open(this)), pillParams(0));
         top.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
-        status = text(20, Color.WHITE);
+        status = text(18, Color.WHITE);
+        status.setTypeface(Typeface.DEFAULT_BOLD);
+        status.setPadding(dp(8), dp(8), dp(8), dp(8));
         status.setOnClickListener(v -> {
             if (!Link.isConnected()) connectIfPresent();
             else askCapture();
         });
         top.addView(status);
-        TextView gear = text(30, Color.rgb(176, 190, 197));
-        gear.setText("   ⚙");
-        gear.setOnClickListener(v -> startActivity(new Intent(this, MainActivity.class)));
-        top.addView(gear);
         root.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout row1 = row();
-        row1.addView(tile(appIcon(MAPS), "📍", "Mapa", Color.rgb(46, 125, 50), v -> launch(MAPS)), cell(gap));
-        row1.addView(tile(getDrawable(android.R.drawable.ic_btn_speak_now), "🎤", "Falar destino",
-                Color.rgb(21, 101, 192), v -> voiceDestination()), cell(gap));
-        row1.addView(tile(intentIcon(new Intent(Intent.ACTION_DIAL)), "📞", "Telefone",
-                Color.rgb(230, 81, 0), v -> phone()), cell(gap));
-        root.addView(row1, rowParams());
+        LinearLayout second = new LinearLayout(this);
+        second.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
+        boolean cel = Prefs.modoCelular(this);
+        second.addView(pill(cel ? "MODO CENTRAL" : "MODO CELULAR", Color.rgb(136, 14, 79), v -> toggleMode()), pillParams(gap));
+        second.addView(pill("AJUSTES", Color.rgb(55, 71, 79),
+                v -> startActivity(new Intent(this, MainActivity.class))), pillParams(gap));
+        if (portrait) {
+            root.addView(second, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        } else {
+            // Deitado cabe tudo numa linha só.
+            for (int i = 0; second.getChildCount() > 0; i++) {
+                View v = second.getChildAt(0);
+                second.removeViewAt(0);
+                top.addView(v, pillParams(gap));
+            }
+        }
 
-        LinearLayout row2 = row();
-        row2.addView(tile(appIcon(SPOTIFY), "🎵", "Spotify", Color.rgb(38, 50, 56), v -> launch(SPOTIFY)), cell(gap));
-        row2.addView(tile(appIcon(YOUTUBE), "▶", "YouTube", Color.rgb(183, 28, 28), v -> launch(YOUTUBE)), cell(gap));
-        row2.addView(tile(intentIcon(new Intent(Intent.ACTION_VOICE_COMMAND)), "💬", "Assistente",
-                Color.rgb(81, 45, 168), v -> assistant()), cell(gap));
-        root.addView(row2, rowParams());
+        View[] tiles = {
+                tile(appIcon(MAPS), "Mapa", Color.rgb(46, 125, 50), v -> launch(MAPS)),
+                tile(getDrawable(android.R.drawable.ic_btn_speak_now), "Falar destino", Color.rgb(21, 101, 192), v -> voiceDestination()),
+                tile(intentIcon(new Intent(Intent.ACTION_DIAL)), "Telefone", Color.rgb(230, 81, 0), v -> phone()),
+                tile(appIcon(SPOTIFY), "Spotify", Color.rgb(38, 50, 56), v -> launch(SPOTIFY)),
+                tile(appIcon(YOUTUBE), "YouTube", Color.rgb(183, 28, 28), v -> launch(YOUTUBE)),
+                tile(intentIcon(new Intent(Intent.ACTION_VOICE_COMMAND)), "Assistente", Color.rgb(81, 45, 168), v -> assistant()),
+        };
+        // Deitado: 3 colunas x 2 linhas. Em pé: 2 colunas x 3 linhas.
+        int cols = portrait ? 2 : 3;
+        for (int r = 0; r * cols < tiles.length; r++) {
+            LinearLayout row = row();
+            for (int c = 0; c < cols && r * cols + c < tiles.length; c++) row.addView(tiles[r * cols + c], cell(gap));
+            root.addView(row, rowParams());
+        }
         return root;
+    }
+
+    private TextView pill(String label, int color, View.OnClickListener l) {
+        TextView t = text(18, Color.WHITE);
+        t.setText(label);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setGravity(Gravity.CENTER);
+        int p = dp(10);
+        t.setPadding(p * 2, p, p * 2, p);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(color);
+        bg.setCornerRadius(dp(24));
+        t.setBackground(bg);
+        t.setOnClickListener(l);
+        return t;
+    }
+
+    private LinearLayout.LayoutParams pillParams(int left) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(left, dp(4), 0, dp(4));
+        return lp;
+    }
+
+    private void toggleMode() {
+        Prefs.setModoCelular(this, !Prefs.modoCelular(this));
+        Prefs.applyOrientation(this);
+        Prefs.applyBrightness(this);
+        Overlay.refresh(this);
+        setContentView(buildUi());
+        updateStatus();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        setContentView(buildUi());
+        updateStatus();
     }
 
     /** Ícone de verdade do app instalado (ou null se não estiver instalado). */
@@ -443,7 +475,7 @@ public class DashActivity extends Activity implements Link.Listener {
         }
     }
 
-    private View tile(Drawable icon, String fallbackEmoji, String label, int color, View.OnClickListener l) {
+    private View tile(Drawable icon, String label, int color, View.OnClickListener l) {
         LinearLayout t = new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
         t.setGravity(Gravity.CENTER);
@@ -461,11 +493,6 @@ public class DashActivity extends Activity implements Link.Listener {
             LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(sz, sz);
             ip.bottomMargin = dp(6);
             t.addView(iv, ip);
-        } else {
-            TextView i = text(44, Color.WHITE);
-            i.setText(fallbackEmoji);
-            i.setGravity(Gravity.CENTER);
-            t.addView(i);
         }
         TextView n = text(22, Color.WHITE);
         n.setText(label);
