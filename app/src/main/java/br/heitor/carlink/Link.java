@@ -33,11 +33,18 @@ final class Link {
     private static volatile State state = State.DESCONECTADO;
     private static volatile Listener listener;
 
+    /** Teto de bitrate. A central costuma pedir 12 Mbps, mas aí os quadros-chave ficam
+     *  enormes e podem estourar o buffer dela. 6 Mbps dá ótima imagem a 800x480 com folga. */
+    private static final int BITRATE_MAX = 6_000_000;
+
     /** Parâmetros pedidos pela central no STAR. */
     static volatile int reqWidth = 800;
     static volatile int reqHeight = 480;
-    static volatile int reqBitrate = 4_000_000;
-    static volatile boolean startRequested;
+    static volatile int reqBitrate = BITRATE_MAX;
+    /** Precisa (re)criar o codificador: só quando a resolução muda ou não há sessão. */
+    static volatile boolean needEncoder;
+    /** A central ressincronizou (STAR repetido): manda um quadro-chave já, sem recriar nada. */
+    static volatile boolean needKeyframe;
     /** A central pediu pausa no vídeo (VCTL = 1). */
     static volatile boolean videoPaused;
     /** Reenviar SPS/PPS antes do próximo quadro (depois de um VCTL de retomada). */
@@ -48,6 +55,9 @@ final class Link {
 
     static volatile long rxBytes;
     static volatile long txBytes;
+    /** Quantos STAR repetidos a central já mandou nesta conexão (diagnóstico). */
+    static volatile long starRepeats;
+    private static long ignoredFromCentral;
 
     private Link() {
     }
@@ -95,7 +105,9 @@ final class Link {
         out = new FileOutputStream(fd);
         rxBytes = 0;
         txBytes = 0;
-        startRequested = false;
+        starRepeats = 0;
+        needEncoder = false;
+        needKeyframe = false;
         videoPaused = false;
         setState(State.CONECTADO);
         Thread t = new Thread(Link::readLoop, "usb-reader");
@@ -148,35 +160,49 @@ final class Link {
         }
         switch (m.cmd) {
             case Proto.SYNC: {
-                AppLog.i("RX SYNC (seq " + Integer.toHexString(m.seq) + ") -> respondendo SYNC");
+                // Responde o SYNC sem derrubar o vídeo que já está rolando.
                 write(new Proto.Builder(Proto.SYNC, m.seq).i32(2).build());
-                setState(State.SINCRONIZADO);
+                if (state != State.ESPELHANDO) {
+                    AppLog.i("RX SYNC -> respondendo SYNC");
+                    setState(State.SINCRONIZADO);
+                }
                 break;
             }
             case Proto.STAR: {
                 int w = m.i16(20);
                 int h = m.i16(22);
                 int br = m.i32(24);
-                int extra = m.i32(28);
-                AppLog.i("RX STAR: " + w + "x" + h + ", bitrate " + br + ", extra " + extra);
-                if (w > 0 && h > 0) {
-                    reqWidth = w;
-                    reqHeight = h;
-                    if (br > 0) reqBitrate = br;
-                } else {
-                    reqWidth = 1024;
-                    reqHeight = 576;
-                    reqBitrate = 7_000_000;
+                if (w <= 0 || h <= 0) {
+                    w = 1024;
+                    h = 576;
+                    br = 7_000_000;
                 }
+                int bitrate = br > 0 ? Math.min(br, BITRATE_MAX) : BITRATE_MAX;
+                boolean sizeChanged = (w != reqWidth || h != reqHeight);
+                reqWidth = w;
+                reqHeight = h;
+                reqBitrate = bitrate;
                 videoPaused = false;
+                // Sempre responde o STAR (a central espera a confirmação com as dimensões).
                 write(new Proto.Builder(Proto.STAR, 0)
                         .i16(reqWidth).i16(reqHeight).i32(reqBitrate)
                         .i16(screenLong).i16(screenShort)
                         .i32(0).i32(0).build());
-                AppLog.i("TX STAR: vídeo " + reqWidth + "x" + reqHeight + ", tela " + screenLong + "x" + screenShort);
-                startRequested = true;
-                Listener l = listener;
-                if (l != null) l.onStartRequested();
+                boolean mirroring = MirrorService.running && state == State.ESPELHANDO;
+                if (!mirroring || sizeChanged) {
+                    // Primeira vez, ou a central mudou a resolução: (re)cria o codificador.
+                    AppLog.i("RX STAR: " + w + "x" + h + ", bitrate " + (bitrate / 1000) + " kbps"
+                            + (sizeChanged ? " (resolução nova)" : ""));
+                    needEncoder = true;
+                    Listener l = listener;
+                    if (l != null) l.onStartRequested();
+                } else {
+                    // Mesma resolução e já espelhando: NÃO recria nada (isso é o que sobrecarregava
+                    // a central e causava o reset). Só reenvia um quadro-chave para ela ressincronizar.
+                    starRepeats++;
+                    needKeyframe = true;
+                    resendConfig = true;
+                }
                 break;
             }
             case Proto.LIVE: {
@@ -191,7 +217,12 @@ final class Link {
                 break;
             }
             default:
-                AppLog.i("RX comando desconhecido \"" + m.cmd + "\" (" + n + " bytes): " + AppLog.hex(b, Math.min(n, 64), 64));
+                // A central devolve pacotes (VDAT e outros) que o próprio Hi-Link ignora.
+                // Não são erro: contamos em silêncio para não poluir o log.
+                ignoredFromCentral++;
+                if ((ignoredFromCentral % 500) == 0) {
+                    AppLog.i("(" + ignoredFromCentral + " pacotes de retorno da central ignorados, normal)");
+                }
         }
     }
 
@@ -218,8 +249,10 @@ final class Link {
         pfd = null;
         in = null;
         out = null;
-        startRequested = false;
-        AppLog.i("Desconectado. Recebido: " + rxBytes + " bytes, enviado: " + txBytes + " bytes.");
+        needEncoder = false;
+        needKeyframe = false;
+        AppLog.i("Desconectado. Recebido: " + rxBytes + " bytes, enviado: " + txBytes
+                + " bytes, STAR repetidos: " + starRepeats + ".");
         Listener l = listener;
         if (l != null) l.onStateChanged();
     }

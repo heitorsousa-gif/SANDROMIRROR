@@ -170,6 +170,24 @@ public class DashActivity extends Activity implements Link.Listener {
     /** O Android exige confirmar a gravação de tela a cada conexão. */
     private void askCapture() {
         if (MirrorService.running || askingCapture) return;
+        // Na primeira vez, avisa para escolher "Tela inteira": com "Um único app" a central
+        // só mostra o SandroMirror e não o Mapa/Spotify que o usuário abrir.
+        android.content.SharedPreferences sp = getSharedPreferences("sandro", MODE_PRIVATE);
+        if (!sp.getBoolean("avisouTelaInteira", false)) {
+            sp.edit().putBoolean("avisouTelaInteira", true).apply();
+            new AlertDialog.Builder(this)
+                    .setTitle("Escolha \"Tela inteira\"")
+                    .setMessage("Na próxima tela, toque em \"Um único app\" e troque para \"Tela inteira\". "
+                            + "Assim a central mostra tudo o que você abrir, não só este painel.")
+                    .setPositiveButton("Entendi", (d, w) -> launchCapture())
+                    .setCancelable(false)
+                    .show();
+        } else {
+            launchCapture();
+        }
+    }
+
+    private void launchCapture() {
         askingCapture = true;
         MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
         startActivityForResult(mpm.createScreenCaptureIntent(), REQ_CAPTURE);

@@ -97,8 +97,8 @@ public class MirrorService extends Service {
 
     private void loop() {
         while (!stop) {
-            if (Link.isConnected() && Link.startRequested) {
-                Link.startRequested = false;
+            if (Link.isConnected() && Link.needEncoder) {
+                Link.needEncoder = false;
                 try {
                     encodeSession(Link.reqWidth, Link.reqHeight, Link.reqBitrate);
                 } catch (Exception e) {
@@ -148,7 +148,9 @@ public class MirrorService extends Service {
             // quadro-chave na hora e só volta a mandar a partir dele.
             boolean waitKey = true;
             boolean wasPaused = false;
-            while (!stop && Link.isConnected() && !Link.startRequested) {
+            // Sai deste laço só quando a resolução muda (needEncoder). STAR repetido com a mesma
+            // resolução NÃO recria o codificador: vira só um pedido de quadro-chave (needKeyframe).
+            while (!stop && Link.isConnected() && !Link.needEncoder) {
                 int idx = codec.dequeueOutputBuffer(info, 100_000);
                 if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                     MediaFormat of = codec.getOutputFormat();
@@ -173,6 +175,13 @@ public class MirrorService extends Service {
                     lastSync = SystemClock.elapsedRealtime();
                 }
                 wasPaused = paused;
+                // A central mandou STAR de novo (ressincronizar): manda um quadro-chave já.
+                if (Link.needKeyframe) {
+                    Link.needKeyframe = false;
+                    waitKey = true;
+                    requestSync(codec);
+                    lastSync = SystemClock.elapsedRealtime();
+                }
 
                 if (!isConfig && ob != null && info.size > 0 && config != null) {
                     if (paused) {
