@@ -41,6 +41,7 @@ final class AppLog {
     }
 
     static void i(String msg) {
+        android.util.Log.i("SandroMirror", msg);
         String line;
         synchronized (AppLog.class) {
             line = TIME.format(new Date()) + "  " + msg;

@@ -105,6 +105,7 @@ class Slideshow extends FrameLayout {
         final Context c = getContext().getApplicationContext();
         worker.execute(() -> {
             List<Uri> list = resolve(c);
+            AppLog.i("Fotos: " + list.size() + " na rotação (" + Prefs.fontesFotos(c).size() + " origens).");
             ui.post(() -> {
                 photos.clear();
                 photos.addAll(list);
@@ -184,7 +185,10 @@ class Slideshow extends FrameLayout {
                 getResources().getDisplayMetrics().heightPixels);
         worker.execute(() -> {
             Bitmap full = decode(c, uri, max);
-            if (full == null) return;
+            if (full == null) {
+                AppLog.i("Fotos: não consegui abrir " + uri);
+                return;
+            }
             Bitmap small = Bitmap.createScaledBitmap(full, Math.max(1, full.getWidth() / 16),
                     Math.max(1, full.getHeight() / 16), true);
             ui.post(() -> {

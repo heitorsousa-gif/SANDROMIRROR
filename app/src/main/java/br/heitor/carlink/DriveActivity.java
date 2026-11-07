@@ -84,6 +84,7 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        AppLog.init(this);
         Prefs.applyOrientation(this);
         msm = (MediaSessionManager) getSystemService(Context.MEDIA_SESSION_SERVICE);
         rebuild();
@@ -282,7 +283,7 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
             Prefs.addFonteFoto(this, "d:" + tree);
             toast("Pasta adicionada. Fotos novas que você puser nela entram sozinhas.");
         }
-        slides.start();
+        // Não recarrega aqui: o onResume, que vem logo em seguida, já recarrega a lista.
     }
 
     private boolean addPhoto(Uri u, int flags) {
