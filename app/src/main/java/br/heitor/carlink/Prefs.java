@@ -59,6 +59,15 @@ final class Prefs {
         }
     }
 
+    /** Fotos com zoom preenchendo a área (true, padrão) ou inteiras (false). */
+    static boolean fotoPreencher(Context c) {
+        return sp(c).getBoolean("fotoPreencher", true);
+    }
+
+    static void setFotoPreencher(Context c, boolean v) {
+        sp(c).edit().putBoolean("fotoPreencher", v).apply();
+    }
+
     /** Tema de cores (índice em Retro.THEME_NAMES). */
     static int tema(Context c) {
         return sp(c).getInt("tema", 0);

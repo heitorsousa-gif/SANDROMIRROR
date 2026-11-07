@@ -37,6 +37,7 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
     private static final int REQ_PASTA = 32;
     private static final int[] INTERVALS = {8, 15, 30, 60};
     private TextView photoCount;
+    private Button fillBtn, fitBtn;
     private final java.util.List<Button> intervalBtns = new java.util.ArrayList<>();
     private final java.util.List<Button> themeBtns = new java.util.ArrayList<>();
 
@@ -333,6 +334,23 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
             ir.addView(bt, weight());
         }
         root.addView(ir, matchWrap());
+        TextView modo = new TextView(this);
+        modo.setText("Jeito de mostrar a foto:");
+        modo.setTextSize(16);
+        modo.setPadding(0, dp(10), 0, 0);
+        root.addView(modo, matchWrap());
+        LinearLayout mr = row();
+        fillBtn = button("Preencher (zoom)", v -> {
+            Prefs.setFotoPreencher(this, true);
+            refreshSettings();
+        });
+        fitBtn = button("Inteira", v -> {
+            Prefs.setFotoPreencher(this, false);
+            refreshSettings();
+        });
+        mr.addView(fillBtn, weight());
+        mr.addView(fitBtn, weight());
+        root.addView(mr, matchWrap());
         root.addView(button("Limpar fotos", v -> {
             Prefs.limparFotos(this);
             toast("Fotos tiradas da rotação (continuam na sua galeria).");
@@ -378,6 +396,11 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
         int cur = Prefs.intervalo(this);
         for (int i = 0; i < intervalBtns.size(); i++) {
             intervalBtns.get(i).setText((INTERVALS[i] == cur ? "[" + INTERVALS[i] + " s]" : INTERVALS[i] + " s"));
+        }
+        if (fillBtn != null) {
+            boolean fill = Prefs.fotoPreencher(this);
+            fillBtn.setText(fill ? "[ Preencher (zoom) ]" : "Preencher (zoom)");
+            fitBtn.setText(fill ? "Inteira" : "[ Inteira ]");
         }
         int tema = Prefs.tema(this);
         for (int i = 0; i < themeBtns.size(); i++) {

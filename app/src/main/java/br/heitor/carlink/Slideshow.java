@@ -23,10 +23,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Papel de parede com as fotos do usuário passando. Fotos em pé e deitadas aparecem
- * inteiras e nítidas no centro; atrás, uma cópia desfocada da própria foto preenche o
- * espaço que sobra. Nada fica por cima da foto. Pode pausar (até sair da tela) ou fixar
- * uma foto (fica guardado).
+ * Papel de parede com as fotos do usuário passando, sem nada por cima da foto.
+ * Modo "preencher" (padrão): a foto ocupa toda a área com zoom, centralizada um pouco
+ * acima do meio (onde costumam ficar rosto e orelhas). Modo "inteira": a foto aparece
+ * completa e o resto é preenchido pela própria foto desfocada, que também é o fundo da tela.
+ * Pode pausar (até sair da tela) ou fixar uma foto (fica guardado).
  */
 class Slideshow extends FrameLayout {
 
@@ -45,6 +46,11 @@ class Slideshow extends FrameLayout {
     private Uri current;
     private Listener listener;
     private int loadToken;
+    private int areaW = 1, areaH = 1;
+    private boolean alignStart;
+
+    /** Altura do "foco" ao cortar: 0 = topo, 0.5 = meio. Rostos ficam em geral um pouco acima do meio. */
+    private static final float FOCO_VERTICAL = 0.38f;
 
     private final Runnable advance = new Runnable() {
         @Override
@@ -98,18 +104,51 @@ class Slideshow extends FrameLayout {
      * O fundo desfocado continua ocupando a tela toda.
      */
     void setPhotoInsets(int width, int height, int l, int t, int r, int b, boolean alignStart) {
-        int maxW = Math.max(1, width - l - r);
-        int maxH = Math.max(1, height - t - b);
-        int gravity = (alignStart ? android.view.Gravity.START : android.view.Gravity.CENTER_HORIZONTAL)
-                | android.view.Gravity.CENTER_VERTICAL;
+        areaW = Math.max(1, width - l - r);
+        areaH = Math.max(1, height - t - b);
+        this.alignStart = alignStart;
         for (Layer layer : layers) {
             layer.area.setPadding(l, t, r, b);
-            layer.fg.setMaxWidth(maxW);
-            layer.fg.setMaxHeight(maxH);
-            LayoutParams lp = (LayoutParams) layer.fg.getLayoutParams();
-            lp.gravity = gravity;
+            applyMode(layer);
+        }
+    }
+
+    /** Arruma a foto da camada conforme o modo escolhido (preencher ou inteira). */
+    private void applyMode(Layer layer) {
+        LayoutParams lp = (LayoutParams) layer.fg.getLayoutParams();
+        if (Prefs.fotoPreencher(getContext())) {
+            lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+            lp.height = ViewGroup.LayoutParams.MATCH_PARENT;
+            layer.fg.setAdjustViewBounds(false);
+            layer.fg.setScaleType(ImageView.ScaleType.MATRIX);
+            layer.fg.setLayoutParams(lp);
+            fillMatrix(layer.fg);
+        } else {
+            lp.width = ViewGroup.LayoutParams.WRAP_CONTENT;
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            lp.gravity = (alignStart ? android.view.Gravity.START : android.view.Gravity.CENTER_HORIZONTAL)
+                    | android.view.Gravity.CENTER_VERTICAL;
+            layer.fg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            layer.fg.setAdjustViewBounds(true);
+            layer.fg.setMaxWidth(areaW);
+            layer.fg.setMaxHeight(areaH);
             layer.fg.setLayoutParams(lp);
         }
+    }
+
+    /** Zoom para a foto cobrir a área inteira, cortando o mínimo e mirando no foco. */
+    private void fillMatrix(ImageView v) {
+        android.graphics.drawable.Drawable d = v.getDrawable();
+        if (d == null) return;
+        float bw = d.getIntrinsicWidth(), bh = d.getIntrinsicHeight();
+        if (bw <= 0 || bh <= 0) return;
+        float s = Math.max(areaW / bw, areaH / bh);
+        float dx = (areaW - bw * s) * 0.5f;
+        float dy = (areaH - bh * s) * FOCO_VERTICAL;
+        Matrix m = new Matrix();
+        m.setScale(s, s);
+        m.postTranslate(dx, dy);
+        v.setImageMatrix(m);
     }
 
     int count() {
@@ -225,6 +264,7 @@ class Slideshow extends FrameLayout {
                 Layer top = layers[front];
                 back.bg.setImageBitmap(blurred);
                 back.fg.setImageBitmap(full);
+                applyMode(back);
                 back.root.animate().alpha(1f).setDuration(900).start();
                 top.root.animate().alpha(0f).setDuration(900).start();
                 front = 1 - front;
