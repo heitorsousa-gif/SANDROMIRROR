@@ -57,7 +57,10 @@ public class Overlay extends Service {
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
         WindowManager.LayoutParams p = new WindowManager.LayoutParams(size, size, type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
+                // KEEP_SCREEN_ON: enquanto espelha, a tela do celular não apaga nem bloqueia,
+                // em qualquer app (o espelhamento precisa da tela ligada).
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                PixelFormat.TRANSLUCENT);
         p.gravity = Gravity.START | Gravity.CENTER_VERTICAL;
         p.x = Math.round(8 * getResources().getDisplayMetrics().density);
         p.screenOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE;

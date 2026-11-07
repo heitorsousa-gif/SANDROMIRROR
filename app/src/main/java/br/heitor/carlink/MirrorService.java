@@ -120,6 +120,7 @@ public class MirrorService extends Service {
             f.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
             f.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 30);
             f.setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000);
+            f.setInteger(MediaFormat.KEY_PRIORITY, 0); // tempo real: o codificador tem prioridade
             codec.configure(f, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
             Surface surface = codec.createInputSurface();
             codec.start();
@@ -140,7 +141,13 @@ public class MirrorService extends Service {
             long lastSync = 0;
             long frames = 0;
             long bytes = 0;
+            long recoveries = 0;
             long lastLog = SystemClock.elapsedRealtime();
+            // Depois de qualquer quadro perdido (pausa da central, câmera de ré...), os quadros
+            // seguintes dependem do que se perdeu e aparecem quebrados. Então: pede um
+            // quadro-chave na hora e só volta a mandar a partir dele.
+            boolean waitKey = true;
+            boolean wasPaused = false;
             while (!stop && Link.isConnected() && !Link.startRequested) {
                 int idx = codec.dequeueOutputBuffer(info, 100_000);
                 if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
@@ -155,33 +162,53 @@ public class MirrorService extends Service {
                 if (idx < 0) continue;
                 ByteBuffer ob = codec.getOutputBuffer(idx);
                 boolean isConfig = (info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0;
-                if (!isConfig && ob != null && info.size > 0 && config != null && !Link.videoPaused) {
-                    if (Link.resendConfig) {
-                        Link.resendConfig = false;
-                        sendVideo(config, 0, config.length);
+                boolean isKey = (info.flags & MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0;
+                boolean paused = Link.videoPaused;
+                if (paused && !wasPaused) AppLog.i("Central pausou o vídeo (câmera de ré ou tela própria).");
+                if (!paused && wasPaused) {
+                    AppLog.i("Central retomou o vídeo: mandando imagem completa.");
+                    waitKey = true;
+                    Link.resendConfig = true;
+                    requestSync(codec);
+                    lastSync = SystemClock.elapsedRealtime();
+                }
+                wasPaused = paused;
+
+                if (!isConfig && ob != null && info.size > 0 && config != null) {
+                    if (paused) {
+                        waitKey = true;
+                    } else if (waitKey && !isKey) {
+                        // descarta até chegar o quadro-chave pedido
+                    } else {
+                        if (waitKey || Link.resendConfig) {
+                            Link.resendConfig = false;
+                            sendVideo(config, 0, config.length);
+                            if (waitKey) recoveries++;
+                            waitKey = false;
+                        }
+                        byte[] data = new byte[info.size];
+                        ob.position(info.offset);
+                        ob.limit(info.offset + info.size);
+                        ob.get(data);
+                        sendVideo(data, 0, data.length);
+                        frames++;
+                        bytes += data.length;
                     }
-                    byte[] data = new byte[info.size];
-                    ob.position(info.offset);
-                    ob.limit(info.offset + info.size);
-                    ob.get(data);
-                    sendVideo(data, 0, data.length);
-                    frames++;
-                    bytes += data.length;
                 }
                 codec.releaseOutputBuffer(idx, false);
                 long now = SystemClock.elapsedRealtime();
-                // O Hi-Link pede um quadro-chave a cada 0,5 s. Quadros-chave são grandes e,
-                // pedidos tão seguido, roubam qualidade dos outros (imagem pixelando).
-                // Aqui o pedido é a cada 2 s, o que ainda recupera rápido de uma falha.
-                if (now - lastSync > 2000) {
+                // Quadro-chave a cada 1 s (o Hi-Link usa 0,5 s): equilíbrio entre qualidade
+                // e recuperação rápida se a central perder algum pedaço.
+                if (now - lastSync > 1000 || (waitKey && now - lastSync > 300)) {
                     requestSync(codec);
                     lastSync = now;
                 }
                 if (now - lastLog >= 10_000) {
-                    AppLog.i("Vídeo: " + (frames / 10) + " quadros/s, " + (bytes / 10240) + " KB/s"
-                            + (Link.videoPaused ? " (pausado pela central)" : ""));
+                    AppLog.i("Vídeo: " + (frames / 10) + " quadros/s, " + (bytes / 10240) + " KB/s, "
+                            + recoveries + " recuperações" + (paused ? " (pausado pela central)" : ""));
                     frames = 0;
                     bytes = 0;
+                    recoveries = 0;
                     lastLog = now;
                 }
             }

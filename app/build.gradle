@@ -15,7 +15,7 @@ android {
         // antigas do repositório TESTS-AND-SHEESH e instalar por cima delas.
         def build = (System.getenv("VERSION_CODE") ?: "1").toInteger()
         versionCode build
-        versionName "0.7"
+        versionName "0.8"
     }
 
     signingConfigs {

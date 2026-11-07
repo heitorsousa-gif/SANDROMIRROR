@@ -16,7 +16,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.content.pm.ResolveInfo;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.widget.ImageView;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -190,9 +193,31 @@ public class DashActivity extends Activity implements Link.Listener {
         updateStatus();
     }
 
+    /**
+     * Pede para o Android não aplicar economia de bateria no app: sem isso o sistema pode
+     * desacelerar o espelhamento quando outro app está na frente.
+     */
+    private boolean offerBatteryExemption() {
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pm == null || pm.isIgnoringBatteryOptimizations(getPackageName())) return false;
+        android.content.SharedPreferences sp = getSharedPreferences("sandro", MODE_PRIVATE);
+        if (sp.getBoolean("askedBattery", false)) return false;
+        sp.edit().putBoolean("askedBattery", true).apply();
+        try {
+            startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + getPackageName())));
+            return true;
+        } catch (ActivityNotFoundException e) {
+            return false;
+        }
+    }
+
     /** Uma vez por abertura: oferece liberar a sobreposição (botão 🏠 e apps deitados). */
     private void offerOverlayPermission() {
-        if (askedOverlay || Settings.canDrawOverlays(this)) return;
+        if (askedOverlay || Settings.canDrawOverlays(this)) {
+            offerBatteryExemption();
+            return;
+        }
         askedOverlay = true;
         new AlertDialog.Builder(this)
                 .setTitle("Botão de voltar ao painel")
@@ -297,6 +322,10 @@ public class DashActivity extends Activity implements Link.Listener {
         startUnlocked(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     }
 
+    private void phone() {
+        startUnlocked(new Intent(Intent.ACTION_DIAL).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+
     /** Assistente de voz do celular (o mesmo que o "Ok Google"). */
     private void assistant() {
         try {
@@ -363,20 +392,42 @@ public class DashActivity extends Activity implements Link.Listener {
         root.addView(top, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout row1 = row();
-        row1.addView(tile("📍", "Mapa", Color.rgb(46, 125, 50), v -> launch(MAPS)), cell(gap));
-        row1.addView(tile("🎤", "Falar destino", Color.rgb(21, 101, 192), v -> voiceDestination()), cell(gap));
-        row1.addView(tile("🚗", "Waze", Color.rgb(0, 131, 143), v -> launch(WAZE)), cell(gap));
+        row1.addView(tile(appIcon(MAPS), "📍", "Mapa", Color.rgb(46, 125, 50), v -> launch(MAPS)), cell(gap));
+        row1.addView(tile(getDrawable(android.R.drawable.ic_btn_speak_now), "🎤", "Falar destino",
+                Color.rgb(21, 101, 192), v -> voiceDestination()), cell(gap));
+        row1.addView(tile(intentIcon(new Intent(Intent.ACTION_DIAL)), "📞", "Telefone",
+                Color.rgb(230, 81, 0), v -> phone()), cell(gap));
         root.addView(row1, rowParams());
 
         LinearLayout row2 = row();
-        row2.addView(tile("🎵", "Spotify", Color.rgb(27, 94, 32), v -> launch(SPOTIFY)), cell(gap));
-        row2.addView(tile("▶", "YouTube", Color.rgb(183, 28, 28), v -> launch(YOUTUBE)), cell(gap));
-        row2.addView(tile("💬", "Assistente", Color.rgb(81, 45, 168), v -> assistant()), cell(gap));
+        row2.addView(tile(appIcon(SPOTIFY), "🎵", "Spotify", Color.rgb(38, 50, 56), v -> launch(SPOTIFY)), cell(gap));
+        row2.addView(tile(appIcon(YOUTUBE), "▶", "YouTube", Color.rgb(183, 28, 28), v -> launch(YOUTUBE)), cell(gap));
+        row2.addView(tile(intentIcon(new Intent(Intent.ACTION_VOICE_COMMAND)), "💬", "Assistente",
+                Color.rgb(81, 45, 168), v -> assistant()), cell(gap));
         root.addView(row2, rowParams());
         return root;
     }
 
-    private View tile(String icon, String label, int color, View.OnClickListener l) {
+    /** Ícone de verdade do app instalado (ou null se não estiver instalado). */
+    private Drawable appIcon(String pkg) {
+        try {
+            return getPackageManager().getApplicationIcon(pkg);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Ícone do app que responde a uma ação (discador, assistente...). */
+    private Drawable intentIcon(Intent i) {
+        try {
+            ResolveInfo ri = getPackageManager().resolveActivity(i, 0);
+            return ri == null ? null : ri.loadIcon(getPackageManager());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private View tile(Drawable icon, String fallbackEmoji, String label, int color, View.OnClickListener l) {
         LinearLayout t = new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
         t.setGravity(Gravity.CENTER);
@@ -386,14 +437,24 @@ public class DashActivity extends Activity implements Link.Listener {
         t.setBackground(bg);
         t.setClickable(true);
         t.setOnClickListener(l);
-        TextView i = text(44, Color.WHITE);
-        i.setText(icon);
-        i.setGravity(Gravity.CENTER);
+        if (icon != null) {
+            ImageView iv = new ImageView(this);
+            iv.setImageDrawable(icon);
+            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int sz = dp(64);
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(sz, sz);
+            ip.bottomMargin = dp(6);
+            t.addView(iv, ip);
+        } else {
+            TextView i = text(44, Color.WHITE);
+            i.setText(fallbackEmoji);
+            i.setGravity(Gravity.CENTER);
+            t.addView(i);
+        }
         TextView n = text(22, Color.WHITE);
         n.setText(label);
         n.setTypeface(Typeface.DEFAULT_BOLD);
         n.setGravity(Gravity.CENTER);
-        t.addView(i);
         t.addView(n);
         return t;
     }
