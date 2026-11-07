@@ -6,8 +6,6 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
-import android.graphics.RenderEffect;
-import android.graphics.Shader;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
@@ -26,8 +24,9 @@ import java.util.concurrent.Executors;
 
 /**
  * Papel de parede com as fotos do usuário passando. Fotos em pé e deitadas aparecem
- * inteiras: a foto fica centralizada e uma cópia desfocada dela preenche o resto da tela.
- * Pode pausar (até sair da tela) ou fixar uma foto (fica guardado).
+ * inteiras e nítidas no centro; atrás, uma cópia desfocada da própria foto preenche o
+ * espaço que sobra. Nada fica por cima da foto. Pode pausar (até sair da tela) ou fixar
+ * uma foto (fica guardado).
  */
 class Slideshow extends FrameLayout {
 
@@ -56,21 +55,27 @@ class Slideshow extends FrameLayout {
         }
     };
 
-    /** Uma camada = fundo desfocado + foto inteira por cima. */
+    /** Uma camada = fundo desfocado + foto inteira por cima (as duas camadas se revezam). */
     private final class Layer {
         final FrameLayout root = new FrameLayout(getContext());
         final ImageView bg = new ImageView(getContext());
+        /** Área da foto nítida: o recuo (padding) define onde ela pode aparecer. */
+        final FrameLayout area = new FrameLayout(getContext());
         final ImageView fg = new ImageView(getContext());
 
         Layer() {
             bg.setScaleType(ImageView.ScaleType.CENTER_CROP);
-            fg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            bg.setColorFilter(0x80000000); // escurece o fundo para a foto e as janelas se destacarem
             if (Build.VERSION.SDK_INT >= 31) {
-                bg.setRenderEffect(RenderEffect.createBlurEffect(30, 30, Shader.TileMode.CLAMP));
+                bg.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
+                        20, 20, android.graphics.Shader.TileMode.CLAMP));
             }
-            bg.setAlpha(0.75f);
+            fg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            fg.setAdjustViewBounds(true);
             root.addView(bg, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            root.addView(fg, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+            area.addView(fg, new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    android.view.Gravity.CENTER));
+            root.addView(area, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         }
     }
 
@@ -85,6 +90,26 @@ class Slideshow extends FrameLayout {
 
     void setListener(Listener l) {
         listener = l;
+    }
+
+    /**
+     * Área onde a foto nítida aparece (recuos a partir das bordas da tela). A foto fica
+     * inteira e centralizada na altura dessa área; com alignStart, encostada à esquerda.
+     * O fundo desfocado continua ocupando a tela toda.
+     */
+    void setPhotoInsets(int width, int height, int l, int t, int r, int b, boolean alignStart) {
+        int maxW = Math.max(1, width - l - r);
+        int maxH = Math.max(1, height - t - b);
+        int gravity = (alignStart ? android.view.Gravity.START : android.view.Gravity.CENTER_HORIZONTAL)
+                | android.view.Gravity.CENTER_VERTICAL;
+        for (Layer layer : layers) {
+            layer.area.setPadding(l, t, r, b);
+            layer.fg.setMaxWidth(maxW);
+            layer.fg.setMaxHeight(maxH);
+            LayoutParams lp = (LayoutParams) layer.fg.getLayoutParams();
+            lp.gravity = gravity;
+            layer.fg.setLayoutParams(lp);
+        }
     }
 
     int count() {
@@ -111,7 +136,10 @@ class Slideshow extends FrameLayout {
                 photos.addAll(list);
                 String pin = Prefs.fotoFixada(c);
                 if (pin != null) {
-                    showUri(Uri.parse(pin));
+                    Uri pu = Uri.parse(pin);
+                    // Guarda a posição da foto fixada para o "próxima" não repetir a mesma.
+                    index = photos.indexOf(pu);
+                    showUri(pu);
                 } else if (!photos.isEmpty()) {
                     show(0);
                 }
@@ -189,14 +217,13 @@ class Slideshow extends FrameLayout {
                 AppLog.i("Fotos: não consegui abrir " + uri);
                 return;
             }
-            Bitmap small = Bitmap.createScaledBitmap(full, Math.max(1, full.getWidth() / 16),
-                    Math.max(1, full.getHeight() / 16), true);
+            Bitmap blurred = blurSmall(full);
             ui.post(() -> {
                 if (token != loadToken) return;
                 current = uri;
                 Layer back = layers[1 - front];
                 Layer top = layers[front];
-                back.bg.setImageBitmap(small);
+                back.bg.setImageBitmap(blurred);
                 back.fg.setImageBitmap(full);
                 back.root.animate().alpha(1f).setDuration(900).start();
                 top.root.animate().alpha(0f).setDuration(900).start();
@@ -204,6 +231,44 @@ class Slideshow extends FrameLayout {
                 notifyState();
             });
         });
+    }
+
+    /**
+     * Cópia pequena e desfocada da foto para o fundo. Reduz para ~64px de largura e aplica
+     * três passadas de desfoque em caixa: fica suave em qualquer Android e custa quase nada.
+     */
+    static Bitmap blurSmall(Bitmap src) {
+        int w = 64;
+        int h = Math.max(1, Math.round(64f * src.getHeight() / src.getWidth()));
+        Bitmap b = Bitmap.createScaledBitmap(src, w, h, true).copy(Bitmap.Config.ARGB_8888, true);
+        int[] px = new int[w * h];
+        b.getPixels(px, 0, w, 0, 0, w, h);
+        int[] tmp = new int[w * h];
+        for (int pass = 0; pass < 3; pass++) {
+            boxBlur(px, tmp, w, h, 3, true);
+            boxBlur(tmp, px, w, h, 3, false);
+        }
+        b.setPixels(px, 0, w, 0, 0, w, h);
+        return b;
+    }
+
+    private static void boxBlur(int[] in, int[] out, int w, int h, int r, boolean horizontal) {
+        int len = horizontal ? w : h, lines = horizontal ? h : w;
+        for (int l = 0; l < lines; l++) {
+            for (int i = 0; i < len; i++) {
+                int rs = 0, gs = 0, bs = 0, n = 0;
+                for (int k = -r; k <= r; k++) {
+                    int j = Math.max(0, Math.min(len - 1, i + k));
+                    int p = horizontal ? in[l * w + j] : in[j * w + l];
+                    rs += (p >> 16) & 255;
+                    gs += (p >> 8) & 255;
+                    bs += p & 255;
+                    n++;
+                }
+                int o = horizontal ? l * w + i : i * w + l;
+                out[o] = 0xFF000000 | ((rs / n) << 16) | ((gs / n) << 8) | (bs / n);
+            }
+        }
     }
 
     // ---- Fotos no celular ----

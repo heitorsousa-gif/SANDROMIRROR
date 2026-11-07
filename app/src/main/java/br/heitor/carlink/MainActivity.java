@@ -33,6 +33,12 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
 
     private static final String ACTION_USB_PERMISSION = "br.heitor.carlink.USB_PERMISSION";
     private static final int REQ_CAPTURE = 1;
+    private static final int REQ_FOTOS = 31;
+    private static final int REQ_PASTA = 32;
+    private static final int[] INTERVALS = {8, 15, 30, 60};
+    private TextView photoCount;
+    private final java.util.List<Button> intervalBtns = new java.util.ArrayList<>();
+    private final java.util.List<Button> themeBtns = new java.util.ArrayList<>();
 
     private TextView status;
     private TextView hint;
@@ -153,6 +159,10 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_FOTOS || requestCode == REQ_PASTA) {
+            onPhotosPicked(requestCode, resultCode, data);
+            return;
+        }
         if (requestCode != REQ_CAPTURE) return;
         askingCapture = false;
         if (resultCode != RESULT_OK || data == null) {
@@ -256,9 +266,11 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
 
     private View buildUi() {
         int pad = dp(12);
+        ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(pad, pad, pad, pad);
+        scroll.addView(root);
 
         status = new TextView(this);
         status.setTextSize(24);
@@ -292,14 +304,146 @@ public class MainActivity extends Activity implements AppLog.Listener, Link.List
         row2.addView(button("Sobreposição", v -> openOverlaySettings()), weight());
         root.addView(row2, matchWrap());
 
+        // ---- Fotos do papel de parede (para fazer em casa, com calma) ----
+        root.addView(section("FOTOS DO MODO DIREÇÃO"));
+        photoCount = new TextView(this);
+        photoCount.setTextSize(16);
+        root.addView(photoCount, matchWrap());
+        LinearLayout pr = row();
+        pr.addView(button("Adicionar fotos", v -> pickPhotos()), weight());
+        pr.addView(button("Adicionar pasta", v -> pickFolder()), weight());
+        root.addView(pr, matchWrap());
+        TextView tip = new TextView(this);
+        tip.setText("Com uma pasta, as fotos novas que você salvar nela entram sozinhas.");
+        tip.setTextSize(13);
+        root.addView(tip, matchWrap());
+        TextView ivl = new TextView(this);
+        ivl.setText("Trocar a foto a cada:");
+        ivl.setTextSize(16);
+        ivl.setPadding(0, dp(10), 0, 0);
+        root.addView(ivl, matchWrap());
+        LinearLayout ir = row();
+        intervalBtns.clear();
+        for (int sec : INTERVALS) {
+            Button bt = button(sec + " s", v -> {
+                Prefs.setIntervalo(this, sec);
+                refreshSettings();
+            });
+            intervalBtns.add(bt);
+            ir.addView(bt, weight());
+        }
+        root.addView(ir, matchWrap());
+        root.addView(button("Limpar fotos", v -> {
+            Prefs.limparFotos(this);
+            toast("Fotos tiradas da rotação (continuam na sua galeria).");
+            refreshSettings();
+        }), matchWrap());
+
+        // ---- Tema de cores ----
+        root.addView(section("TEMA DO MODO DIREÇÃO"));
+        themeBtns.clear();
+        for (int i = 0; i < Retro.THEME_NAMES.length; i++) {
+            final int idx = i;
+            Button bt = button(Retro.THEME_NAMES[i], v -> {
+                Prefs.setTema(this, idx);
+                refreshSettings();
+            });
+            themeBtns.add(bt);
+            root.addView(bt, matchWrap());
+        }
+
+        root.addView(section("REGISTRO"));
         logScroll = new ScrollView(this);
         logView = new TextView(this);
         logView.setTypeface(Typeface.MONOSPACE);
         logView.setTextSize(10);
         logView.setTextIsSelectable(true);
         logScroll.addView(logView);
-        root.addView(logScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        return root;
+        root.addView(logScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
+        refreshSettings();
+        return scroll;
+    }
+
+    private TextView section(String t) {
+        TextView v = new TextView(this);
+        v.setText(t);
+        v.setTextSize(18);
+        v.setTypeface(Typeface.DEFAULT_BOLD);
+        v.setPadding(0, dp(22), 0, dp(6));
+        return v;
+    }
+
+    /** Atualiza contagem de fotos, tempo de troca e tema escolhidos. */
+    private void refreshSettings() {
+        int cur = Prefs.intervalo(this);
+        for (int i = 0; i < intervalBtns.size(); i++) {
+            intervalBtns.get(i).setText((INTERVALS[i] == cur ? "[" + INTERVALS[i] + " s]" : INTERVALS[i] + " s"));
+        }
+        int tema = Prefs.tema(this);
+        for (int i = 0; i < themeBtns.size(); i++) {
+            themeBtns.get(i).setText(i == tema ? "[ " + Retro.THEME_NAMES[i] + " ]  escolhido" : Retro.THEME_NAMES[i]);
+        }
+        if (photoCount == null) return;
+        photoCount.setText("Contando fotos...");
+        final android.content.Context app = getApplicationContext();
+        new Thread(() -> {
+            int n = Slideshow.resolve(app).size();
+            int origens = Prefs.fontesFotos(app).size();
+            runOnUiThread(() -> photoCount.setText(n + (n == 1 ? " foto" : " fotos") + " na rotação ("
+                    + origens + (origens == 1 ? " origem)" : " origens)")));
+        }, "contar-fotos").start();
+    }
+
+    private void pickPhotos() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("image/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            startActivityForResult(i, REQ_FOTOS);
+        } catch (android.content.ActivityNotFoundException e) {
+            toast("Não achei a galeria.");
+        }
+    }
+
+    private void pickFolder() {
+        try {
+            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_PASTA);
+        } catch (android.content.ActivityNotFoundException e) {
+            toast("Este celular não deixa escolher pastas. Use Adicionar fotos.");
+        }
+    }
+
+    private void onPhotosPicked(int requestCode, int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null) return;
+        int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+        if (requestCode == REQ_FOTOS) {
+            int added = 0;
+            android.content.ClipData clip = data.getClipData();
+            if (clip != null) {
+                for (int k = 0; k < clip.getItemCount(); k++) if (addPhoto(clip.getItemAt(k).getUri(), flags)) added++;
+            } else if (data.getData() != null && addPhoto(data.getData(), flags)) {
+                added++;
+            }
+            toast(added + (added == 1 ? " foto adicionada" : " fotos adicionadas"));
+        } else if (data.getData() != null) {
+            Uri tree = data.getData();
+            try {
+                getContentResolver().takePersistableUriPermission(tree, flags);
+            } catch (Exception ignored) {
+            }
+            Prefs.addFonteFoto(this, "d:" + tree);
+            toast("Pasta adicionada.");
+        }
+        refreshSettings();
+    }
+
+    private boolean addPhoto(Uri u, int flags) {
+        if (u == null) return false;
+        try {
+            getContentResolver().takePersistableUriPermission(u, flags);
+        } catch (Exception ignored) {
+        }
+        Prefs.addFonteFoto(this, "f:" + u);
+        return true;
     }
 
     private Button button(String text, View.OnClickListener l) {

@@ -388,6 +388,14 @@ public class DashActivity extends Activity implements Link.Listener {
         second.setGravity(Gravity.CENTER_VERTICAL | Gravity.END);
         boolean cel = Prefs.modoCelular(this);
         second.addView(pill(cel ? "MODO CENTRAL" : "MODO CELULAR", Color.rgb(136, 14, 79), v -> toggleMode()), pillParams(gap));
+        boolean apagar = Prefs.apagarTela(this);
+        second.addView(pill(apagar ? "APAGAR TELA: ON" : "APAGAR TELA: OFF",
+                apagar ? Color.rgb(183, 28, 28) : Color.rgb(55, 71, 79), v -> {
+                    Prefs.setApagarTela(this, !Prefs.apagarTela(this));
+                    Prefs.applyBrightness(this);
+                    setContentView(buildUi());
+                    updateStatus();
+                }), pillParams(gap));
         second.addView(pill("AJUSTES", Color.rgb(55, 71, 79),
                 v -> startActivity(new Intent(this, MainActivity.class))), pillParams(gap));
         if (portrait) {

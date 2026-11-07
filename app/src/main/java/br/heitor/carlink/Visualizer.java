@@ -10,7 +10,7 @@ import android.view.View;
 import java.util.Random;
 
 /**
- * Barrinhas de equalizador estilo anos 90. É só decoração (não lê o áudio de verdade):
+ * Barrinhas de equalizador estilo anos 90 (verde, amarelo e vermelho, como os medidores antigos). É só decoração (não lê o áudio de verdade):
  * as barras dançam enquanto a música toca e descem quando pausa. Atualiza ~6 vezes por
  * segundo para gastar pouco e não atrapalhar o espelhamento.
  */
@@ -62,7 +62,7 @@ class Visualizer extends View {
         int w = getWidth(), hh = getHeight();
         if (w == 0 || hh == 0) return;
         if (hh != lastH) {
-            p.setShader(new LinearGradient(0, hh, 0, 0, new int[]{Retro.CYAN, Retro.PURPLE, Retro.PINK},
+            p.setShader(new LinearGradient(0, hh, 0, 0, new int[]{Retro.GREEN, Retro.YELLOW, Retro.RED},
                     null, Shader.TileMode.CLAMP));
             lastH = hh;
         }

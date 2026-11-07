@@ -2,18 +2,15 @@ package br.heitor.carlink;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
-import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -33,29 +30,25 @@ import android.widget.Toast;
 import java.util.List;
 
 /**
- * Modo direção: as fotos do usuário passando como papel de parede, a música tocando e a
- * próxima instrução do Maps, no visual Windows 95 cyberpunk.
+ * Modo direção no visual do Windows antigo: as fotos do usuário passando na tela toda
+ * (fundo = a própria foto desfocada; nada cobre a foto nítida), o player da música tocando e a próxima instrução do Maps.
  * Deitado (modo central): para usar pela tela da central. Em pé (modo celular): para o
- * copiloto, com os ajustes das fotos.
+ * copiloto. As fotos e o tema são escolhidos nos Ajustes.
  */
 public class DriveActivity extends Activity implements Avisos.Listener, Slideshow.Listener {
-
-    private static final int REQ_FOTOS = 31;
-    private static final int REQ_PASTA = 32;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private MediaSessionManager msm;
     private MediaController controller;
     private boolean resumed;
+    private int builtTheme = -1;
 
-    // Elementos da tela (recriados quando gira).
+    // Elementos da tela (recriados quando gira ou troca o tema).
     private Slideshow slides;
-    private View navWindow, musicWindow, permWindow, emptyWindow;
+    private View navWindow, musicWindow, permWindow, emptyText;
     private ImageView navIcon, art, playBtn;
-    private TextView navDist, navText, title, artist, pauseBtn, pinBtn, countText;
+    private TextView navDist, navText, title, artist, pauseBtn, pinBtn, apagarBtn;
     private Visualizer viz;
-    private final TextView[] intervalBtns = new TextView[4];
-    private static final int[] INTERVALS = {8, 15, 30, 60};
 
     private final MediaController.Callback mediaCb = new MediaController.Callback() {
         @Override
@@ -99,6 +92,8 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
 
     private void rebuild() {
         if (slides != null) slides.stop();
+        Retro.applyTheme(this);
+        builtTheme = Prefs.tema(this);
         boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
         setContentView(portrait ? buildPortrait() : buildLandscape());
     }
@@ -107,6 +102,8 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
     protected void onResume() {
         super.onResume();
         resumed = true;
+        // Voltando dos Ajustes com outro tema: redesenha.
+        if (Prefs.tema(this) != builtTheme) rebuild();
         Prefs.applyBrightness(this);
         onResumeBindings();
     }
@@ -127,6 +124,7 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
         }
         onNavChanged();
         onSlideStateChanged();
+        updateApagar();
     }
 
     @Override
@@ -224,85 +222,33 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
     public void onSlideStateChanged() {
         if (slides == null) return;
         boolean has = slides.count() > 0 || slides.isPinned();
-        if (emptyWindow != null) emptyWindow.setVisibility(has ? View.GONE : View.VISIBLE);
+        if (emptyText != null) emptyText.setVisibility(has ? View.GONE : View.VISIBLE);
         if (pauseBtn != null) pauseBtn.setText(slides.isPaused() ? "CONTINUAR" : "PAUSAR");
         if (pinBtn != null) {
             pinBtn.setText(slides.isPinned() ? "SOLTAR" : "FIXAR");
-            pinBtn.setTextColor(slides.isPinned() ? Retro.YELLOW : Color.WHITE);
+            pinBtn.setTextColor(slides.isPinned() ? Retro.ACTIVE : Color.BLACK);
         }
-        if (countText != null) {
-            int n = Prefs.fontesFotos(this).size();
-            countText.setText(slides.count() + " fotos na rotação (" + n + (n == 1 ? " origem)" : " origens)"));
-        }
-        int cur = Prefs.intervalo(this);
-        for (int i = 0; i < intervalBtns.length; i++) {
-            if (intervalBtns[i] != null) intervalBtns[i].setTextColor(INTERVALS[i] == cur ? Retro.YELLOW : Color.WHITE);
-        }
-    }
-
-    private void pickPhotos() {
-        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("image/*").putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-        try {
-            startActivityForResult(i, REQ_FOTOS);
-        } catch (ActivityNotFoundException e) {
-            toast("Não achei a galeria.");
-        }
-    }
-
-    private void pickFolder() {
-        try {
-            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), REQ_PASTA);
-        } catch (ActivityNotFoundException e) {
-            toast("Este celular não deixa escolher pastas. Use Adicionar fotos.");
-        }
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || data == null) return;
-        int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
-        if (requestCode == REQ_FOTOS) {
-            int added = 0;
-            ClipData clip = data.getClipData();
-            if (clip != null) {
-                for (int k = 0; k < clip.getItemCount(); k++) {
-                    if (addPhoto(clip.getItemAt(k).getUri(), flags)) added++;
-                }
-            } else if (data.getData() != null && addPhoto(data.getData(), flags)) {
-                added++;
-            }
-            toast(added + (added == 1 ? " foto adicionada" : " fotos adicionadas"));
-        } else if (requestCode == REQ_PASTA && data.getData() != null) {
-            Uri tree = data.getData();
-            try {
-                getContentResolver().takePersistableUriPermission(tree, flags);
-            } catch (Exception ignored) {
-            }
-            Prefs.addFonteFoto(this, "d:" + tree);
-            toast("Pasta adicionada. Fotos novas que você puser nela entram sozinhas.");
-        }
-        // Não recarrega aqui: o onResume, que vem logo em seguida, já recarrega a lista.
-    }
-
-    private boolean addPhoto(Uri u, int flags) {
-        if (u == null) return false;
-        try {
-            getContentResolver().takePersistableUriPermission(u, flags);
-        } catch (Exception ignored) {
-        }
-        Prefs.addFonteFoto(this, "f:" + u);
-        return true;
     }
 
     // ---- Ações ----
+
+    private void toggleApagar() {
+        Prefs.setApagarTela(this, !Prefs.apagarTela(this));
+        Prefs.applyBrightness(this);
+        updateApagar();
+    }
+
+    private void updateApagar() {
+        if (apagarBtn == null) return;
+        boolean on = Prefs.apagarTela(this);
+        apagarBtn.setText(on ? "APAGAR TELA: ON" : "APAGAR TELA: OFF");
+        apagarBtn.setTextColor(on ? Retro.ACTIVE : Color.BLACK);
+    }
 
     private void toggleMode() {
         boolean cel = !Prefs.modoCelular(this);
         Prefs.setModoCelular(this, cel);
         Prefs.applyOrientation(this);
-        Prefs.applyBrightness(this);
         Overlay.refresh(this);
         toast(cel ? "Modo celular: tela em pé para o copiloto" : "Modo central: tela deitada para a central");
     }
@@ -334,12 +280,23 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
         return Retro.dp(this, v);
     }
 
-    private Slideshow newSlides() {
+    /**
+     * Fotos ocupando a tela inteira: o fundo é a própria foto desfocada e a foto nítida
+     * aparece inteira na área que sobra (definida depois com setPhotoInsets).
+     */
+    private Slideshow buildSlides() {
         slides = new Slideshow(this);
-        slides.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{Color.rgb(20, 0, 40), Color.rgb(60, 10, 90), Color.rgb(0, 60, 90)}));
+        slides.setBackgroundColor(Retro.DESKTOP);
         slides.setListener(this);
         return slides;
+    }
+
+    private TextView buildEmptyText() {
+        TextView empty = Retro.text(this, "Nenhuma foto ainda.\nAdicione em AJUSTES, no painel.",
+                24, Color.WHITE, Retro.term(this), Color.BLACK);
+        empty.setGravity(Gravity.CENTER);
+        emptyText = empty;
+        return empty;
     }
 
     /** Janela do player: capa, música, equalizador e botões. */
@@ -351,47 +308,48 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
         row.setGravity(Gravity.CENTER_VERTICAL);
         art = new ImageView(this);
         art.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        int b = dp(3);
+        int b = dp(2);
         art.setPadding(b, b, b, b);
-        art.setBackground(new Retro.Bevel(Color.BLACK, Retro.DARK, Retro.PINK, b));
+        art.setBackground(new Retro.Bevel(Color.BLACK, Retro.SHADOW, Retro.LIGHT, b));
         art.setClickable(true);
         art.setOnClickListener(v -> openApp(controller != null ? controller.getPackageName() : DashActivity.SPOTIFY));
-        int artSize = dp(compact ? 84 : 96);
+        int artSize = dp(compact ? 84 : 92);
         row.addView(art, new LinearLayout.LayoutParams(artSize, artSize));
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setPadding(dp(12), 0, 0, 0);
-        title = Retro.text(this, "", compact ? 17 : 19, Color.WHITE, Retro.future(this), Retro.CYAN);
+        title = Retro.text(this, "", compact ? 17 : 18, Color.WHITE, Retro.future(this), 0);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.MARQUEE);
         title.setMarqueeRepeatLimit(-1);
         title.setSelected(true);
-        artist = Retro.text(this, "", compact ? 20 : 22, Retro.PINK, Retro.term(this), Retro.PINK);
+        artist = Retro.text(this, "", compact ? 20 : 22, Retro.GREEN, Retro.term(this), 0);
         artist.setSingleLine(true);
         artist.setEllipsize(TextUtils.TruncateAt.END);
         artist.setPadding(0, dp(6), 0, dp(6));
         viz = new Visualizer(this);
         texts.addView(title);
         texts.addView(artist);
-        texts.addView(viz, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(compact ? 30 : 36)));
+        texts.addView(viz, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(compact ? 28 : 32)));
         row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         body.addView(row);
 
         LinearLayout controls = new LinearLayout(this);
         controls.setGravity(Gravity.CENTER);
         controls.setPadding(0, dp(10), 0, 0);
-        int sz = dp(compact ? 60 : 66);
-        controls.addView(Retro.iconButton(this, R.drawable.ic_prev, Retro.CYAN, v -> {
+        int sz = dp(compact ? 64 : 76);
+        controls.addView(Retro.iconButton(this, R.drawable.ic_prev, Color.BLACK, v -> {
             if (controller != null) controller.getTransportControls().skipToPrevious();
         }), square(sz));
-        playBtn = Retro.iconButton(this, R.drawable.ic_play, Retro.YELLOW, v -> playPause());
+        playBtn = Retro.iconButton(this, R.drawable.ic_play, Color.rgb(0, 110, 0), v -> playPause());
         controls.addView(playBtn, square(sz));
-        controls.addView(Retro.iconButton(this, R.drawable.ic_next, Retro.CYAN, v -> {
+        controls.addView(Retro.iconButton(this, R.drawable.ic_next, Color.BLACK, v -> {
             if (controller != null) controller.getTransportControls().skipToNext();
         }), square(sz));
         body.addView(controls);
-        return Retro.window(this, "SOM.EXE", body);
+        musicWindow = Retro.window(this, "SOM.EXE", body);
+        return musicWindow;
     }
 
     /** Janela da navegação do Maps (só aparece com rota ativa). */
@@ -400,12 +358,12 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
         body.setGravity(Gravity.CENTER_VERTICAL);
         navIcon = new ImageView(this);
         navIcon.setColorFilter(Retro.CYAN);
-        body.addView(navIcon, new LinearLayout.LayoutParams(dp(56), dp(56)));
+        body.addView(navIcon, new LinearLayout.LayoutParams(dp(52), dp(52)));
         LinearLayout t = new LinearLayout(this);
         t.setOrientation(LinearLayout.VERTICAL);
         t.setPadding(dp(12), 0, 0, 0);
-        navDist = Retro.text(this, "", 24, Retro.YELLOW, Retro.future(this), Retro.YELLOW);
-        navText = Retro.text(this, "", 22, Color.WHITE, Retro.term(this), Retro.CYAN);
+        navDist = Retro.text(this, "", 22, Retro.YELLOW, Retro.future(this), 0);
+        navText = Retro.text(this, "", 21, Retro.CYAN, Retro.term(this), 0);
         navText.setMaxLines(2);
         t.addView(navDist);
         t.addView(navText);
@@ -419,7 +377,7 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
 
     private View buildPermWindow() {
         TextView t = Retro.text(this, "Toque aqui e libere o SandroMirror em \"Acesso a notificações\". "
-                + "Assim aparecem a música e a rota do Maps.", 22, Color.WHITE, Retro.term(this), Retro.PINK);
+                + "Assim aparecem a música e a rota do Maps.", 21, Retro.GREEN, Retro.term(this), 0);
         View w = Retro.window(this, "AVISO.EXE", t);
         w.setClickable(true);
         w.setOnClickListener(v -> openNotificationAccess());
@@ -427,25 +385,19 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
         return w;
     }
 
-    private View buildEmptyWindow(String msg) {
-        TextView t = Retro.text(this, msg, 22, Color.WHITE, Retro.term(this), Retro.CYAN);
-        emptyWindow = Retro.window(this, "FOTOS.EXE", t);
-        return emptyWindow;
-    }
-
-    /** Barra de tarefas estilo Windows 95. */
+    /** Barra de tarefas estilo Windows. */
     private LinearLayout taskbar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         int p = dp(4);
         bar.setPadding(p, p, p, p);
-        bar.setBackground(new Retro.Bevel(Color.argb(235, 30, 8, 60), Retro.LIGHT, Retro.DARK, dp(2)));
+        bar.setBackground(new Retro.Bevel(Retro.SILVER, Retro.LIGHT, Retro.SHADOW, dp(2)));
         return bar;
     }
 
     private LinearLayout.LayoutParams barItem() {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        lp.setMargins(dp(3), 0, dp(3), 0);
+        lp.setMargins(dp(2), 0, dp(2), 0);
         return lp;
     }
 
@@ -455,63 +407,70 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
         return lp;
     }
 
-    private View photoControls(LinearLayout into) {
-        into.addView(Retro.button(this, "<", Retro.FACE, v -> slides.prev()), barItem());
-        pauseBtn = Retro.button(this, "PAUSAR", Retro.FACE, v -> slides.togglePause());
-        into.addView(pauseBtn, barItem());
-        pinBtn = Retro.button(this, "FIXAR", Retro.FACE, v -> slides.togglePin());
-        into.addView(pinBtn, barItem());
-        into.addView(Retro.button(this, ">", Retro.FACE, v -> slides.next()), barItem());
-        return into;
+    private void photoControls(LinearLayout into, LinearLayout.LayoutParams lp) {
+        into.addView(Retro.button(this, "<", Retro.SILVER, v -> slides.prev()), copy(lp));
+        pauseBtn = Retro.button(this, "PAUSAR", Retro.SILVER, v -> slides.togglePause());
+        into.addView(pauseBtn, copy(lp));
+        pinBtn = Retro.button(this, "FIXAR", Retro.SILVER, v -> slides.togglePin());
+        into.addView(pinBtn, copy(lp));
+        into.addView(Retro.button(this, ">", Retro.SILVER, v -> slides.next()), copy(lp));
+    }
+
+    private static LinearLayout.LayoutParams copy(LinearLayout.LayoutParams lp) {
+        LinearLayout.LayoutParams c = new LinearLayout.LayoutParams(lp.width, lp.height, lp.weight);
+        c.setMargins(lp.leftMargin, lp.topMargin, lp.rightMargin, lp.bottomMargin);
+        return c;
     }
 
     // ---- Deitado: modo central ----
 
     private View buildLandscape() {
         FrameLayout root = new FrameLayout(this);
-        root.addView(newSlides(), match());
-        View scan = new View(this);
-        scan.setBackground(new Retro.Scanlines(this));
-        root.addView(scan, match());
-
-        int g = dp(12);
-        // Faixa da esquerda (100dp) fica livre para o botão azul flutuante.
+        root.setBackgroundColor(Retro.DESKTOP);
+        int g = dp(10);
+        // Faixa da esquerda (100dp) é do botão azul flutuante: ali só aparece o fundo desfocado.
         int leftFree = dp(100);
-        int barH = dp(58);
+        int barH = dp(52);
 
-        FrameLayout content = new FrameLayout(this);
-        content.setPadding(leftFree, g, g, barH + g);
-        root.addView(content, match());
+        root.addView(buildSlides(), match());
+        TextView empty = buildEmptyText();
+        root.addView(empty, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
 
-        FrameLayout.LayoutParams navLp = new FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.END);
-        View nav = buildNavWindow();
-        content.addView(nav, navLp);
+        // Coluna da direita: player, rota e aviso de permissão.
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        right.setGravity(Gravity.CENTER_VERTICAL);
+        right.addView(buildMusicWindow(false), block(g));
+        right.addView(buildNavWindow(), block(g));
+        right.addView(buildPermWindow(), block(g));
+        FrameLayout.LayoutParams rlp = new FrameLayout.LayoutParams(dp(360), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END);
+        rlp.setMargins(0, g, g, barH + g);
+        root.addView(right, rlp);
 
-        View music = buildMusicWindow(false);
-        musicWindow = music;
-        content.addView(music, new FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END));
-        View perm = buildPermWindow();
-        content.addView(perm, new FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.END));
-        View empty = buildEmptyWindow("Nenhuma foto ainda. Toque em MODO CELULAR para escolher as suas.");
-        content.addView(empty, new FrameLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.START));
-
-        // As janelas ocupam pouco mais da metade da largura útil, para as fotos aparecerem.
-        content.post(() -> {
-            int usable = content.getWidth() - content.getPaddingLeft() - content.getPaddingRight();
-            setWidth(nav, usable * 52 / 100);
-            setWidth(music, usable * 56 / 100);
-            setWidth(perm, usable * 56 / 100);
-            setWidth(empty, usable * 40 / 100);
+        // A foto nítida fica com todo o resto: da faixa do botão até a coluna do player.
+        // Recalcula sempre que o tamanho da tela muda (ao girar, por exemplo).
+        onSizeChanged(root, (w, h) -> {
+            // Coluna do player mais larga, para os botões de música ficarem fáceis de acertar.
+            int colW = Math.min(dp(440), Math.max(dp(360), w * 40 / 100));
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) right.getLayoutParams();
+            lp.width = colW;
+            right.setLayoutParams(lp);
+            slides.setPhotoInsets(w, h, leftFree, g, colW + g * 2, barH + g, true);
+            FrameLayout.LayoutParams el = (FrameLayout.LayoutParams) empty.getLayoutParams();
+            el.setMargins(leftFree, 0, colW + g * 2, barH);
+            empty.setLayoutParams(el);
         });
 
         LinearLayout bar = taskbar();
-        bar.addView(Retro.button(this, "PAINEL", Retro.PURPLE, v -> DashActivity.open(this)), barItem());
-        bar.addView(Retro.button(this, "MAPA", Retro.PURPLE, v -> openApp(DashActivity.MAPS)), barItem());
-        View sep = new View(this);
-        bar.addView(sep, new LinearLayout.LayoutParams(dp(14), 1));
-        photoControls(bar);
+        bar.addView(Retro.button(this, "PAINEL", Retro.SILVER, v -> DashActivity.open(this)), barItem());
+        bar.addView(Retro.button(this, "MAPA", Retro.SILVER, v -> openApp(DashActivity.MAPS)), barItem());
+        bar.addView(new View(this), new LinearLayout.LayoutParams(dp(10), 1));
+        photoControls(bar, barItem());
         bar.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
-        bar.addView(Retro.button(this, "MODO CELULAR", Retro.darker(Retro.PINK), v -> toggleMode()), barItem());
+        apagarBtn = Retro.button(this, "APAGAR TELA: OFF", Retro.SILVER, v -> toggleApagar());
+        bar.addView(apagarBtn, barItem());
+        bar.addView(Retro.button(this, "MODO CELULAR", Retro.SILVER, v -> toggleMode()), barItem());
         root.addView(bar, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, barH, Gravity.BOTTOM));
         return root;
     }
@@ -520,83 +479,68 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
 
     private View buildPortrait() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{Color.rgb(20, 0, 40), Color.rgb(45, 8, 75), Color.rgb(0, 40, 70)}));
+        root.setBackgroundColor(Retro.DESKTOP);
+        int g = dp(10);
+        int photoH = dp(380);
+
+        // Fundo da tela inteira = foto desfocada; a foto nítida fica no alto.
+        root.addView(buildSlides(), match());
+        TextView empty = buildEmptyText();
+        root.addView(empty, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, photoH, Gravity.TOP));
+
         ScrollView scroll = new ScrollView(this);
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        int g = dp(12);
-        col.setPadding(g, g, g, dp(110));
+        col.setPadding(g, photoH + g, g, dp(110));
         scroll.addView(col);
         root.addView(scroll, match());
-        View scan = new View(this);
-        scan.setBackground(new Retro.Scanlines(this));
-        root.addView(scan, match());
+        onSizeChanged(root, (w, h) -> slides.setPhotoInsets(w, h, g, g, g, Math.max(0, h - photoH), false));
 
-        // Fotos: prévia com os controles embaixo.
-        LinearLayout photoBody = new LinearLayout(this);
-        photoBody.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout frame = new FrameLayout(this);
-        frame.addView(newSlides(), match());
-        View empty = buildEmptyWindow("Nenhuma foto ainda. Adicione abaixo.");
-        frame.addView(empty, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
-        photoBody.addView(frame, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(240)));
         LinearLayout pc = new LinearLayout(this);
         pc.setGravity(Gravity.CENTER);
-        pc.setPadding(0, dp(8), 0, 0);
-        photoControls(pc);
-        photoBody.addView(pc, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
-        col.addView(Retro.window(this, "FOTOS.EXE", photoBody), block(g));
+        pc.setPadding(0, 0, 0, g);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+        lp.setMargins(dp(3), 0, dp(3), 0);
+        photoControls(pc, lp);
+        flushEdges(pc);
+        col.addView(pc);
 
-        musicWindow = buildMusicWindow(true);
-        col.addView(musicWindow, block(g));
-        col.addView(buildPermWindow(), block(g));
+        col.addView(buildMusicWindow(true), block(g));
         col.addView(buildNavWindow(), block(g));
+        col.addView(buildPermWindow(), block(g));
 
-        // Ajustes.
-        LinearLayout set = new LinearLayout(this);
-        set.setOrientation(LinearLayout.VERTICAL);
-        countText = Retro.text(this, "", 22, Color.WHITE, Retro.term(this), Retro.CYAN);
-        set.addView(countText);
-        LinearLayout addRow = new LinearLayout(this);
-        addRow.setPadding(0, dp(8), 0, 0);
-        addRow.addView(Retro.button(this, "ADICIONAR FOTOS", Retro.PURPLE, v -> pickPhotos()), weight());
-        addRow.addView(Retro.button(this, "ADICIONAR PASTA", Retro.PURPLE, v -> pickFolder()), weight());
-        set.addView(addRow);
-        TextView tip = Retro.text(this, "Dica: com uma pasta, as fotos novas que você salvar nela entram sozinhas.",
-                18, Color.argb(200, 255, 255, 255), Retro.term(this), 0);
-        tip.setPadding(0, dp(6), 0, 0);
-        set.addView(tip);
-
-        TextView ivl = Retro.text(this, "TROCAR FOTO A CADA:", 22, Retro.PINK, Retro.term(this), Retro.PINK);
-        ivl.setPadding(0, dp(14), 0, dp(6));
-        set.addView(ivl);
-        LinearLayout ivRow = new LinearLayout(this);
-        for (int i = 0; i < INTERVALS.length; i++) {
-            final int s = INTERVALS[i];
-            intervalBtns[i] = Retro.button(this, s + "s", Retro.FACE, v -> {
-                Prefs.setIntervalo(this, s);
-                onSlideStateChanged();
-            });
-            ivRow.addView(intervalBtns[i], weight());
-        }
-        set.addView(ivRow);
-
-        LinearLayout endRow = new LinearLayout(this);
-        endRow.setPadding(0, dp(14), 0, 0);
-        endRow.addView(Retro.button(this, "LIMPAR FOTOS", Retro.darker(Retro.PINK), v -> {
-            Prefs.limparFotos(this);
-            slides.start();
-            toast("Fotos removidas da rotação (continuam na sua galeria).");
-        }), weight());
-        set.addView(endRow);
-        col.addView(Retro.window(this, "AJUSTES.EXE", set), block(g));
-
-        LinearLayout navRow = new LinearLayout(this);
-        navRow.addView(Retro.button(this, "PAINEL", Retro.PURPLE, v -> DashActivity.open(this)), weight());
-        navRow.addView(Retro.button(this, "MODO CENTRAL", Retro.darker(Retro.PINK), v -> toggleMode()), weight());
-        col.addView(navRow, block(g));
+        LinearLayout row = new LinearLayout(this);
+        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(0, dp(52), 1f);
+        wl.setMargins(dp(3), 0, dp(3), 0);
+        row.addView(Retro.button(this, "PAINEL", Retro.SILVER, v -> DashActivity.open(this)), copy(wl));
+        row.addView(Retro.button(this, "MODO CENTRAL", Retro.SILVER, v -> toggleMode()), copy(wl));
+        flushEdges(row);
+        col.addView(row, block(g));
+        apagarBtn = Retro.button(this, "APAGAR TELA: OFF", Retro.SILVER, v -> toggleApagar());
+        col.addView(apagarBtn, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)));
         return root;
+    }
+
+    /** Tira o recuo do primeiro e do último botão, para a fileira alinhar com as janelas. */
+    private static void flushEdges(LinearLayout row) {
+        int n = row.getChildCount();
+        if (n == 0) return;
+        LinearLayout.LayoutParams first = (LinearLayout.LayoutParams) row.getChildAt(0).getLayoutParams();
+        first.leftMargin = 0;
+        LinearLayout.LayoutParams last = (LinearLayout.LayoutParams) row.getChildAt(n - 1).getLayoutParams();
+        last.rightMargin = 0;
+    }
+
+    interface SizeAction {
+        void run(int w, int h);
+    }
+
+    /** Executa a ação com o tamanho real da tela, de novo a cada mudança de tamanho. */
+    private static void onSizeChanged(View root, SizeAction action) {
+        root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int w = r - l, h = b - t;
+            if (w > 0 && h > 0 && (w != or - ol || h != ob - ot)) v.post(() -> action.run(w, h));
+        });
     }
 
     private static FrameLayout.LayoutParams match() {
@@ -607,17 +551,5 @@ public class DriveActivity extends Activity implements Avisos.Listener, Slidesho
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(0, 0, 0, g);
         return lp;
-    }
-
-    private LinearLayout.LayoutParams weight() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lp.setMargins(dp(3), 0, dp(3), 0);
-        return lp;
-    }
-
-    private static void setWidth(View v, int w) {
-        ViewGroup.LayoutParams lp = v.getLayoutParams();
-        lp.width = w;
-        v.setLayoutParams(lp);
     }
 }

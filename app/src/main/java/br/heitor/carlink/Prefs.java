@@ -35,19 +35,35 @@ final class Prefs {
                 : ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
     }
 
+    /** "Apagar tela": deixa a tela do celular no brilho mínimo (a central continua normal). */
+    static boolean apagarTela(Context c) {
+        return sp(c).getBoolean("apagarTela", false);
+    }
+
+    static void setApagarTela(Context c, boolean v) {
+        sp(c).edit().putBoolean("apagarTela", v).apply();
+    }
+
     /**
-     * Economia de bateria: no modo central, enquanto espelha, a tela do próprio celular fica
-     * no brilho mínimo (o motorista olha para a central). O brilho do celular não muda a imagem
-     * enviada para a central. No modo celular, volta ao brilho normal.
+     * Aplica o "apagar tela" na janela do app: brilho mínimo quando ligado, brilho normal
+     * quando desligado. O brilho da tela do celular não muda a imagem que vai para a central.
      */
     static void applyBrightness(Activity a) {
         android.view.WindowManager.LayoutParams lp = a.getWindow().getAttributes();
-        float want = (!modoCelular(a) && MirrorService.running) ? 0.02f
-                : android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+        float want = apagarTela(a) ? 0.01f : android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
         if (lp.screenBrightness != want) {
             lp.screenBrightness = want;
             a.getWindow().setAttributes(lp);
         }
+    }
+
+    /** Tema de cores (índice em Retro.THEME_NAMES). */
+    static int tema(Context c) {
+        return sp(c).getInt("tema", 0);
+    }
+
+    static void setTema(Context c, int i) {
+        sp(c).edit().putInt("tema", i).apply();
     }
 
     // ---- Fotos do papel de parede ----
