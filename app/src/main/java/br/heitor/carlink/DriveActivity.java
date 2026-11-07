@@ -158,7 +158,7 @@ public class DriveActivity extends Activity implements Avisos.Listener {
         if (controller == null || controller.getMetadata() == null) {
             musicCard.setVisibility(Avisos.enabled(this) ? View.VISIBLE : View.GONE);
             title.setText("Nada tocando");
-            artist.setText("Toque em 🎵 para abrir o Spotify");
+            artist.setText("Toque em ▶ para abrir o Spotify");
             art.setImageDrawable(null);
             playBtn.setText("▶");
             return;
@@ -291,10 +291,10 @@ public class DriveActivity extends Activity implements Avisos.Listener {
         LinearLayout btns = new LinearLayout(this);
         btns.setPadding(0, g * 2, 0, 0);
         btns.addView(pill("🏠 Painel", v -> DashActivity.open(this)), pillParams(g));
-        btns.addView(pill("🗺 Mapa", v -> openApp(DashActivity.MAPS)), pillParams(g));
+        btns.addView(pill("📍 Mapa", v -> openApp(DashActivity.MAPS)), pillParams(g));
         left.addView(btns);
         TextView bgBtn = text(14, Color.argb(200, 255, 255, 255), false);
-        bgBtn.setText("🖼 Trocar fundo");
+        bgBtn.setText("📷 Trocar fundo");
         bgBtn.setPadding(0, g, 0, 0);
         bgBtn.setOnClickListener(v -> chooseBackground());
         left.addView(bgBtn);
