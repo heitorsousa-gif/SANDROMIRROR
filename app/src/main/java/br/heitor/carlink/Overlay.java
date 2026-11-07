@@ -38,7 +38,7 @@ public class Overlay extends Service {
         c.stopService(new Intent(c, Overlay.class));
     }
 
-    /** Reaplica posição e orientação depois de trocar entre modo central e modo celular. */
+    /** Reaplica posição, orientação e "apagar tela" depois de mudar algum ajuste. */
     static void refresh(Context c) {
         if (MirrorService.running && Settings.canDrawOverlays(c)) {
             c.startService(new Intent(c, Overlay.class).setAction(ACTION_REFRESH));
@@ -92,6 +92,10 @@ public class Overlay extends Service {
 
     private void setModeParams() {
         float d = getResources().getDisplayMetrics().density;
+        // "Apagar tela" também nesta janela, que fica por cima de qualquer app: assim o brilho
+        // mínimo vale no Maps, no Spotify etc., não só nas telas do SandroMirror.
+        params.screenBrightness = Prefs.apagarTela(this) ? 0.01f
+                : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
         if (Prefs.modoCelular(this)) {
             params.gravity = Gravity.END | Gravity.BOTTOM;
             params.x = Math.round(16 * d);

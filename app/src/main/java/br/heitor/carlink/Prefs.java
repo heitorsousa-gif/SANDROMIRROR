@@ -41,7 +41,9 @@ final class Prefs {
     }
 
     static void setApagarTela(Context c, boolean v) {
-        sp(c).edit().putBoolean("apagarTela", v).apply();
+        sp(c).edit().putBoolean("apagarTela", v).commit();
+        AppLog.i("Apagar tela: " + (v ? "ON" : "OFF"));
+        Overlay.refresh(c);
     }
 
     /**
