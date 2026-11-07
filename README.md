@@ -19,7 +19,8 @@ Se uma versão nova der problema, a versão estável 0.4 está em [`backup/`](ba
 ## O que tem
 
 - Painel com botões grandes: Mapa, Falar destino (voz), Waze, Spotify, YouTube e Assistente.
-- Aparece por cima da tela de bloqueio e mantém a tela acesa enquanto espelha.
+- Mantém a tela acesa enquanto espelha.
+- **Modo direção**: relógio, música tocando com botões grandes e próxima instrução do Maps, para mexer só pela tela da central. Precisa liberar "Acesso a notificações" uma vez.
 - Toque na tela da central controla o celular.
 - Sem permissão de telefone e sem "desligamento remoto" (o Hi-Link tem os dois).
 

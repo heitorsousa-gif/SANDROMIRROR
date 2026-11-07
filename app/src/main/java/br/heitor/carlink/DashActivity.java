@@ -2,7 +2,6 @@ package br.heitor.carlink;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.KeyguardManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
@@ -96,13 +95,7 @@ public class DashActivity extends Activity implements Link.Listener {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        if (Build.VERSION.SDK_INT >= 27) {
-            setShowWhenLocked(true);
-            setTurnScreenOn(true);
-        } else {
-            getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
-                    | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
-        }
+        // Mantém a tela acesa enquanto o painel está aberto (o espelhamento precisa da tela ligada).
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(buildUi());
         AppLog.init(this);
@@ -353,19 +346,8 @@ public class DashActivity extends Activity implements Link.Listener {
         }
     }
 
-    /** Se o celular estiver bloqueado, pede o desbloqueio antes de abrir outro app. */
     private void startUnlocked(Intent i) {
-        KeyguardManager km = (KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE);
-        if (Build.VERSION.SDK_INT >= 26 && km != null && km.isKeyguardLocked()) {
-            km.requestDismissKeyguard(this, new KeyguardManager.KeyguardDismissCallback() {
-                @Override
-                public void onDismissSucceeded() {
-                    safeStart(i);
-                }
-            });
-        } else {
-            safeStart(i);
-        }
+        safeStart(i);
     }
 
     private void safeStart(Intent i) {
@@ -396,7 +378,23 @@ public class DashActivity extends Activity implements Link.Listener {
         LinearLayout top = new LinearLayout(this);
         top.setGravity(Gravity.CENTER_VERTICAL);
         clock = text(34, Color.WHITE);
-        top.addView(clock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        top.addView(clock);
+        // Botão do modo direção: grande o bastante para acertar na tela da central.
+        TextView drive = text(20, Color.WHITE);
+        drive.setText("🚘 Modo direção");
+        drive.setTypeface(Typeface.DEFAULT_BOLD);
+        drive.setGravity(Gravity.CENTER);
+        int dp10 = dp(10);
+        drive.setPadding(dp10 * 2, dp10, dp10 * 2, dp10);
+        GradientDrawable driveBg = new GradientDrawable();
+        driveBg.setColor(Color.rgb(0, 121, 107));
+        driveBg.setCornerRadius(dp(24));
+        drive.setBackground(driveBg);
+        drive.setOnClickListener(v -> DriveActivity.open(this));
+        LinearLayout.LayoutParams dp2 = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dp2.setMargins(dp(16), 0, 0, 0);
+        top.addView(drive, dp2);
+        top.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1f));
         status = text(20, Color.WHITE);
         status.setOnClickListener(v -> {
             if (!Link.isConnected()) connectIfPresent();

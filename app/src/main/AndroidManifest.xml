@@ -59,6 +59,26 @@
                 android:resource="@xml/accessory_filter" />
         </activity>
 
+        <!-- Modo direção: relógio, música tocando e próxima instrução do Maps. -->
+        <activity
+            android:name=".DriveActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- Lê a música tocando e a instrução do Maps (o usuário libera em "Acesso a notificações"). -->
+        <service
+            android:name=".Avisos"
+            android:exported="true"
+            android:label="SandroMirror: música e rota"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".Overlay"
             android:exported="false" />
